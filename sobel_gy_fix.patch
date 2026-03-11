@@ -1,0 +1,8 @@
+*** Begin Patch
+*** Update File: HDMI_IN_DDR3_sobel/source/img_process/sobel.v
+@@
+-    gy_temp1	<=	matrix13 + 2*matrix23 + matrix33;
+-    gy_temp2	<=	matrix11 + 2*matrix21 + matrix31;
++    gy_temp1	<=	matrix11 + 2*matrix12 + matrix13;
++    gy_temp2	<=	matrix31 + 2*matrix32 + matrix33;
+*** End Patch
