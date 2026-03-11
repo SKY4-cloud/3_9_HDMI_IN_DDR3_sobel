@@ -1,0 +1,15 @@
+# --- ModelSim 仿真产生的日志与缓存 ---
+modelsim.ini
+transcript
+*.wlf
+work/
+
+# --- FPGA 编译综合产生的纯日志和备份文件 ---
+*.log
+*.jou
+*.bak
+*.dmp
+
+# --- 操作系统自动产生的隐藏缓存 ---
+.DS_Store
+Thumbs.db
