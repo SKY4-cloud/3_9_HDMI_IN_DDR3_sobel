@@ -87,7 +87,7 @@ end
 assign line3_data = video_data_1d;
 
 //fifo1
-fifo_line_buffer fifo_line_buf1 (
+fifo_line_buf fifo_line_buf1 (
   .wr_clk(video_clk),                // input
   .wr_rst(~rst_n),                // input
   .wr_en(wr_fifo_en),                  // input
@@ -103,7 +103,7 @@ fifo_line_buffer fifo_line_buf1 (
   .almost_empty()     // output
 );
 //fifo2
-fifo_line_buffer fifo_line_buf2 (
+fifo_line_buf fifo_line_buf2 (
   .wr_clk(video_clk),                // input
   .wr_rst(~rst_n),                // input
   .wr_en(wr_fifo_en_1d),                  // input
