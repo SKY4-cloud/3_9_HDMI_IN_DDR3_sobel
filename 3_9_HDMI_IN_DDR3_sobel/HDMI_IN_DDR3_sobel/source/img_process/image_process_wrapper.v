@@ -13,7 +13,7 @@ module image_process_wrapper #(
     input  wire [7:0]  r_in,
     input  wire [7:0]  g_in,
     input  wire [7:0]  b_in,
-    
+
     // 算法处理完输出的信号
     output wire        post_vs,
     output wire        post_de,
@@ -65,10 +65,15 @@ matrix_3x3 #(
     .matrix31   ( matrix31 ), .matrix32   ( matrix32 ), .matrix33   ( matrix33 )
 );
 
+// Sobel 模块处理完输出的内部连线
+wire        sobel_vs;
+wire        sobel_de;
+wire [7:0]  sobel_data;
+
 // 3. Sobel 边缘检测模块实例化 [cite: 132, 133]
 sobel #(
     .SOBEL_THRESHOLD ( 64 ) // 保持与官方顶层一致的 64 阈值 
-) u_post (
+) u_sobel (
     .video_clk  ( clk ),
     .rst_n      ( rst_n ),
     .matrix_de  ( matrix_de ),
@@ -76,9 +81,9 @@ sobel #(
     .matrix11   ( matrix11 ), .matrix12   ( matrix12 ), .matrix13   ( matrix13 ),
     .matrix21   ( matrix21 ), .matrix22   ( matrix22 ), .matrix23   ( matrix23 ),
     .matrix31   ( matrix31 ), .matrix32   ( matrix32 ), .matrix33   ( matrix33 ),
-    .post_vs   ( post_vs ),
-    .post_de   ( post_de ),
-    .post_data ( post_data )
+    .sobel_vs   ( sobel_vs ),
+    .sobel_de   ( sobel_de ),
+    .sobel_data ( sobel_data )
 );
 
 // ... 前面是你原有的 RGB2YCbCr, u_matrix_3x3, u_sobel ...
