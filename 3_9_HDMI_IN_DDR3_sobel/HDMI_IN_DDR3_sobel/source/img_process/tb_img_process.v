@@ -143,9 +143,9 @@ image_process_wrapper #(
     .b_in       ( cam_data[7:0]   ), // 提取 Blue 通道
     
     // 输出：抓取 Sobel 的结果写入 TXT
-    .sobel_vs   ( out_vsync ),
-    .sobel_de   ( out_de ),
-    .sobel_data ( out_data )
+    .post_vs   ( out_vsync ),
+    .post_de   ( out_de ),
+    .post_data ( out_data )
 );
 
 // =========================================================================
