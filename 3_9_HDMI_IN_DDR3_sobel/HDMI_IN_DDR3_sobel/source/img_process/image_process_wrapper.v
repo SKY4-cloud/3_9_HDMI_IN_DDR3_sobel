@@ -87,27 +87,23 @@ sobel #(
 );
 
 // ... 前面是你原有的 RGB2YCbCr, u_matrix_3x3, u_sobel ...
-// 注意：下面这段代码要插在 endmodule 之前！
-
-// 定义第二级流水线的连线
+// =========================================================================
+// 4. 第二个 3x3 矩阵 (吞入 Sobel 的黑白边缘，生成窗口)
+// =========================================================================
 wire        matrix2_de;
 wire [7:0]  m2_11, m2_12, m2_13;
 wire [7:0]  m2_21, m2_22, m2_23;
 wire [7:0]  m2_31, m2_32, m2_33;
 
-wire [7:0]  dilate_res;
-wire [7:0]  erode_res;
-
-// 4. 第二个 3x3 矩阵 (吞入 Sobel 的输出，生成新的 3x3 窗口)
 matrix_3x3 #(
     .IMG_WIDTH  ( IMG_WIDTH  ), 
     .IMG_HEIGHT ( IMG_HEIGHT )
 ) u_matrix_3x3_inst2 (
     .video_clk  ( clk ),
     .rst_n      ( rst_n ),
-    .video_vs   ( sobel_vs ),    // 把 sobel 的 vsync 传过来
-    .video_de   ( sobel_de ),    // 把 sobel 的 de 传过来
-    .video_data ( sobel_data ),  // 【关键】输入变成 Sobel 的黑白边缘图！
+    .video_vs   ( sobel_vs ),    
+    .video_de   ( sobel_de ),    
+    .video_data ( sobel_data ),  // 输入: Sobel 边缘
     
     .matrix_de  ( matrix2_de ),
     .matrix11(m2_11), .matrix12(m2_12), .matrix13(m2_13),
@@ -115,8 +111,14 @@ matrix_3x3 #(
     .matrix31(m2_31), .matrix32(m2_32), .matrix33(m2_33)
 );
 
-// 5. 形态学运算模块
-morphology u_morphology (
+// =========================================================================
+// 5. 第一级形态学：膨胀操作 (Dilation)
+// =========================================================================
+wire        morph1_vs;
+wire        morph1_de;
+wire [7:0]  morph1_dilate; // 我们只需要它的膨胀结果
+
+morphology u_morphology_dilate (
     .clk         ( clk ),
     .rst_n       ( rst_n ),
     .matrix_vs   ( sobel_vs ),   
@@ -125,15 +127,60 @@ morphology u_morphology (
     .p21(m2_21), .p22(m2_22), .p23(m2_23),
     .p31(m2_31), .p32(m2_32), .p33(m2_33),
     
-    .out_vs      ( post_vs ),  // 最终输出给 Testbench
-    .out_de      ( post_de ),
-    .dilate_data ( dilate_res ),
-    .erode_data  ( erode_res )
+    .out_vs      ( morph1_vs ),
+    .out_de      ( morph1_de ),
+    .dilate_data ( morph1_dilate ), // 提取变胖的图像
+    .erode_data  ( /* 悬空不接 */ ) 
 );
 
-// 【终极输出选择】
-// 架构师建议：对于车牌，膨胀的效果最明显，我们先输出膨胀结果看看！
-assign post_data = dilate_res;  // 如果你想看腐蚀，就改成 erode_res
+// =========================================================================
+// 6. 第三个 3x3 矩阵 (吞入“膨胀”后的图像，生成新窗口)
+// =========================================================================
+wire        matrix3_de;
+wire [7:0]  m3_11, m3_12, m3_13;
+wire [7:0]  m3_21, m3_22, m3_23;
+wire [7:0]  m3_31, m3_32, m3_33;
 
+matrix_3x3 #(
+    .IMG_WIDTH  ( IMG_WIDTH  ), 
+    .IMG_HEIGHT ( IMG_HEIGHT )
+) u_matrix_3x3_inst3 (
+    .video_clk  ( clk ),
+    .rst_n      ( rst_n ),
+    .video_vs   ( morph1_vs ),    // 传入第一级形态学的时序
+    .video_de   ( morph1_de ),    
+    .video_data ( morph1_dilate), // 【关键】输入变成膨胀后的图像！
+    
+    .matrix_de  ( matrix3_de ),
+    .matrix11(m3_11), .matrix12(m3_12), .matrix13(m3_13),
+    .matrix21(m3_21), .matrix22(m3_22), .matrix23(m3_23),
+    .matrix31(m3_31), .matrix32(m3_32), .matrix33(m3_33)
+);
+
+// =========================================================================
+// 7. 第二级形态学：腐蚀操作 (Erosion)
+// =========================================================================
+wire [7:0]  morph2_erode;
+
+morphology u_morphology_erode (
+    .clk         ( clk ),
+    .rst_n       ( rst_n ),
+    .matrix_vs   ( morph1_vs ),   
+    .matrix_de   ( matrix3_de ),
+    .p11(m3_11), .p12(m3_12), .p13(m3_13),
+    .p21(m3_21), .p22(m3_22), .p23(m3_23),
+    .p31(m3_31), .p32(m3_32), .p33(m3_33),
+    
+    // 最终输出给 Testbench
+    .out_vs      ( post_vs ),
+    .out_de      ( post_de ),
+    .dilate_data ( /* 悬空不接 */ ), 
+    .erode_data  ( morph2_erode )  // 提取变瘦的图像
+);
+
+// =========================================================================
+// 【终极输出选择】: 闭运算 = 先膨胀，再腐蚀
+// =========================================================================
+assign post_data = morph2_erode;
 
 endmodule
