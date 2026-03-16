@@ -170,4 +170,40 @@ morphology u_morphology_erode (
 
 // 终极输出闭运算结果
 assign post_data = morph2_erode;
+// =========================================================================
+// 【最终大招】7. 硬件直方图投影 (边界提取器)
+// =========================================================================
+wire [11:0] box_x_min, box_x_max, box_y_min, box_y_max;
+wire        box_valid;
+
+projection_extractor #(
+    .IMG_WIDTH  ( IMG_WIDTH  ),
+    .IMG_HEIGHT ( IMG_HEIGHT ),
+    .THRESHOLD  ( 5 ) // 抗噪阈值：低于 5 个像素的噪点直接无视
+) u_projection (
+    .clk        ( clk ),
+    .rst_n      ( rst_n ),
+    .vs_in      ( post_vs ),  // 形态学输出的时序
+    .de_in      ( post_de ),
+    .bin_data   ( post_data ),// 形态学输出的大白块图
+
+    .out_x_min  ( box_x_min ),
+    .out_x_max  ( box_x_max ),
+    .out_y_min  ( box_y_min ),
+    .out_y_max  ( box_y_max ),
+    .box_valid  ( box_valid )
+);
+
+// [魔法展示] 仅用于仿真测试：当坐标算出来时，在控制台打印出来！
+// synthesis translate_off
+always @(posedge clk) begin
+    if (box_valid) begin
+        $display("\n========================================");
+        $display(" [硬件投影加速器] 车牌坐标锁定成功！");
+        $display(" X 轴边界: %0d -> %0d", box_x_min, box_x_max);
+        $display(" Y 轴边界: %0d -> %0d", box_y_min, box_y_max);
+        $display("========================================\n");
+    end
+end
+// synthesis translate_on
 endmodule
