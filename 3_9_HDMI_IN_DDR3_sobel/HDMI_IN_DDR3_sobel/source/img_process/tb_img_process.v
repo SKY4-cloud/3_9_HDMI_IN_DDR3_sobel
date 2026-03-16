@@ -19,7 +19,8 @@ parameter H_TOTAL = H_SYNC + H_BACK + H_DISP + H_FRONT;
 parameter V_SYNC  = 2;
 parameter V_BACK  = 2;
 parameter V_DISP  = IMG_HEIGHT;
-parameter V_FRONT = 2;
+// 【修改点】：把原本的 2 改成 30！给硬件留出 30 行的休息时间！
+parameter V_FRONT = 30; // 30行 * 230拍 = 6900个周期，绝对够算 4096 拍了！
 parameter V_TOTAL = V_SYNC + V_BACK + V_DISP + V_FRONT;
 
 // =========================================================================
