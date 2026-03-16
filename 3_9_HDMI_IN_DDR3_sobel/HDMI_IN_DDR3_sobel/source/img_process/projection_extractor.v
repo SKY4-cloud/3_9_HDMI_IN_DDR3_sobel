@@ -24,7 +24,10 @@ module projection_extractor #(
     output reg  [11:0] out_y_max,
     output reg         box_valid  // 坐标计算完成的脉冲标志
 );
-
+    // --- 2. 硬件 RAM 分配 (FPGA 最宝贵的 BRAM 资源) ---
+    reg [11:0] x_ram [0:2047]; // X 轴投影 RAM (记录每一列有多少白点)
+    reg [11:0] y_ram [0:2047]; // Y 轴投影 RAM (记录每一行有多少白点)
+    
     // --- 0. 消除仿真时的 X 未知态 ---
     integer i;
     initial begin
@@ -61,9 +64,7 @@ module projection_extractor #(
         end
     end
 
-    // --- 2. 硬件 RAM 分配 (FPGA 最宝贵的 BRAM 资源) ---
-    reg [11:0] x_ram [0:2047]; // X 轴投影 RAM (记录每一列有多少白点)
-    reg [11:0] y_ram [0:2047]; // Y 轴投影 RAM (记录每一行有多少白点)
+    
 
     // --- 3. Y 轴投影实时累加 ---
     reg [11:0] row_w_cnt;
