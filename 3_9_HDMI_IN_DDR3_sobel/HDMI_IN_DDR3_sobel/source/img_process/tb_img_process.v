@@ -145,7 +145,11 @@ image_process_wrapper #(
     // 输出：抓取 Sobel 的结果写入 TXT
     .post_vs   ( out_vsync ),
     .post_de   ( out_de ),
-    .post_data ( out_data )
+    .post_data ( out_data ),
+    // 【新增】接出 OSD 全彩视频流
+    .osd_vs    ( out_osd_vs ),
+    .osd_de    ( out_osd_de ),
+    .osd_rgb   ( out_osd_rgb )
 );
 
 // =========================================================================
@@ -159,6 +163,24 @@ always @(posedge clk) begin
     end
 end
 
+integer rgb_file;
+initial begin
+    rgb_file = $fopen("image_out_rgb.txt", "w");
+end
+
+reg [3:0] frame_cnt = 0;
+always @(posedge out_osd_vs) begin
+    frame_cnt <= frame_cnt + 1; // 每遇到一次场同步，帧数+1
+end
+
+always @(posedge clk) begin
+    // 【核心秘籍】：第一帧算坐标，第二帧才画框！所以我们只抓第二帧！
+    if (out_osd_de && frame_cnt == 2) begin
+        // 把 24bit 全彩数据按 6 位十六进制写入
+        $fwrite(rgb_file, "%02x%02x%02x\n", out_osd_rgb[23:16], out_osd_rgb[15:8], out_osd_rgb[7:0]);
+    end
+end
+
 // 控制仿真结束条件：当第一帧数据完全写入后，停止仿真
 reg  [11:0] frame_cnt;
 always @(negedge out_vsync) begin // 场同步下降沿代表一帧结束
@@ -169,7 +191,7 @@ always @(negedge out_vsync) begin // 场同步下降沿代表一帧结束
         if (frame_cnt == 1) begin // 跑完完整的一帧就停
             $display("[+] 仿真结束：一帧图像已处理完毕！");
             $fclose(file_out);    // 必须关闭文件，否则数据写不进去！
-            #10000;$stop;                // 暂停仿真
+            #1500000;$stop;                // 暂停仿真
         end
     end
 end

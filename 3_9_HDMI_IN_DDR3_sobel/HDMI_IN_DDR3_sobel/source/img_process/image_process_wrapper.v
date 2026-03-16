@@ -17,7 +17,11 @@ module image_process_wrapper #(
     // 算法处理完输出的信号
     output wire        post_vs,
     output wire        post_de,
-    output wire [7:0]  post_data
+    output wire [7:0]  post_data,
+    // 【新增】OSD 画框后的全彩视频流
+    output wire        osd_vs,
+    output wire        osd_de,
+    output wire [23:0] osd_rgb
 );
 
 // 内部连接线 [cite: 117, 121, 129]
@@ -206,4 +210,38 @@ always @(posedge clk) begin
     end
 end
 // synthesis translate_on
+
+// =========================================================================
+// 【视觉巅峰】8. OSD 动态画框器
+// =========================================================================
+wire [7:0] osd_r, osd_g, osd_b;
+
+osd_draw_box #(
+    .LINE_WIDTH ( 2 ) // 仿真图片比较小(200x100)，线宽设为 2 比较精致
+) u_osd_draw_box (
+    .clk         ( clk ),
+    .rst_n       ( rst_n ),
+    // 吞入最原始的全彩视频流！
+    .vs_in       ( vs_in ),
+    .de_in       ( de_in ),
+    .r_in        ( r_in ),
+    .g_in        ( g_in ),
+    .b_in        ( b_in ),
+    
+    // 吞入上一帧算好的坐标 (来自 u_projection)
+    .box_x_min   ( box_x_min ),
+    .box_x_max   ( box_x_max ),
+    .box_y_min   ( box_y_min ),
+    .box_y_max   ( box_y_max ),
+    
+    // 吐出染色后的视频流
+    .vs_out      ( osd_vs ),
+    .de_out      ( osd_de ),
+    .r_out       ( osd_r ),
+    .g_out       ( osd_g ),
+    .b_out       ( osd_b )
+);
+
+// 将分开的 RGB 拼接成 24bit 总线输出
+assign osd_rgb = {osd_r, osd_g, osd_b};
 endmodule
