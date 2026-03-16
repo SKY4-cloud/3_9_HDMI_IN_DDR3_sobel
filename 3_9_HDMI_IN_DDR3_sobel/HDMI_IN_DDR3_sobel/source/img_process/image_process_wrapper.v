@@ -25,6 +25,7 @@ wire        y_vs;
 wire        y_hs;
 wire        y_de;
 wire [7:0]  y_data;
+wire [7:0]  cb_data; // 【新增】：接出蓝色色度通道
 
 wire        matrix_de;
 wire [7:0]  matrix11, matrix12, matrix13;
@@ -45,50 +46,85 @@ RGB2YCbCr RGB2YCbCr_inst (
     .hsync_out  (y_hs),  
     .de_out     (y_de),        
     .y          (y_data),                  
-    .cb         (),              
+    .cb      ( cb_data ),              
     .cr         ()                 
 );
 
-// 2. 3x3 矩阵生成模块实例化 [cite: 126, 127]
-matrix_3x3 #(
-    .IMG_WIDTH  ( IMG_WIDTH  ), // 使用传入的参数！
-    .IMG_HEIGHT ( IMG_HEIGHT )
-) u_matrix_3x3 (
-    .video_clk  ( clk ),
-    .rst_n      ( rst_n ),
-    .video_vs   ( y_vs ),
-    .video_de   ( y_de ),
-    .video_data ( y_data ),
-    .matrix_de  ( matrix_de ),
-    .matrix11   ( matrix11 ), .matrix12   ( matrix12 ), .matrix13   ( matrix13 ),
-    .matrix21   ( matrix21 ), .matrix22   ( matrix22 ), .matrix23   ( matrix23 ),
-    .matrix31   ( matrix31 ), .matrix32   ( matrix32 ), .matrix33   ( matrix33 )
-);
-
-// Sobel 模块处理完输出的内部连线
-wire        sobel_vs;
-wire        sobel_de;
-wire [7:0]  sobel_data;
-
-// 3. Sobel 边缘检测模块实例化 [cite: 132, 133]
-sobel #(
-    .SOBEL_THRESHOLD ( 64 ) // 保持与官方顶层一致的 64 阈值 
-) u_sobel (
-    .video_clk  ( clk ),
-    .rst_n      ( rst_n ),
-    .matrix_de  ( matrix_de ),
-    .matrix_vs  ( y_vs ),
-    .matrix11   ( matrix11 ), .matrix12   ( matrix12 ), .matrix13   ( matrix13 ),
-    .matrix21   ( matrix21 ), .matrix22   ( matrix22 ), .matrix23   ( matrix23 ),
-    .matrix31   ( matrix31 ), .matrix32   ( matrix32 ), .matrix33   ( matrix33 ),
-    .sobel_vs   ( sobel_vs ),
-    .sobel_de   ( sobel_de ),
-    .sobel_data ( sobel_data )
-);
-
-// ... 前面是你原有的 RGB2YCbCr, u_matrix_3x3, u_sobel ...
 // =========================================================================
-// 4. 第二个 3x3 矩阵 (吞入 Sobel 的黑白边缘，生成窗口)
+// 【全新加入】2. Cb 色彩通道二值化 (彻底替代 Sobel)
+// =========================================================================
+reg         cb_bin_vs;
+reg         cb_bin_de;
+reg  [7:0]  cb_bin_data;
+
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        cb_bin_vs   <= 0;
+        cb_bin_de   <= 0;
+        cb_bin_data <= 8'd0;
+    end else begin
+        cb_bin_vs   <= y_vs; // 时序直接借用 Y 通道的，完美对齐
+        cb_bin_de   <= y_de;
+        
+        // 阈值判断：国内蓝牌的 Cb 值通常极高（130~170）
+        // 如果大于 130，说明是蓝色车牌底色，变成纯白；否则变纯黑。
+        if (cb_data > 8'd130)
+            cb_bin_data <= 8'd255; 
+        else
+            cb_bin_data <= 8'd0;   
+    end
+end
+
+// =========================================================================
+// 3. 矩阵 1：为膨胀生成 3x3 窗口
+// =========================================================================
+wire        matrix1_de;
+wire [7:0]  m1_11, m1_12, m1_13;
+wire [7:0]  m1_21, m1_22, m1_23;
+wire [7:0]  m1_31, m1_32, m1_33;
+
+matrix_3x3 #(
+    .IMG_WIDTH  ( IMG_WIDTH  ), 
+    .IMG_HEIGHT ( IMG_HEIGHT )
+) u_matrix_3x3_inst1 (
+    .video_clk  ( clk ),
+    .rst_n      ( rst_n ),
+    .video_vs   ( cb_bin_vs ),    
+    .video_de   ( cb_bin_de ),    
+    .video_data ( cb_bin_data ),  // <--- 输入二值化后的蓝色区域！
+    
+    .matrix_de  ( matrix1_de ),
+    .matrix11(m1_11), .matrix12(m1_12), .matrix13(m1_13),
+    .matrix21(m1_21), .matrix22(m1_22), .matrix23(m1_23),
+    .matrix31(m1_31), .matrix32(m1_32), .matrix33(m1_33)
+);
+
+// =========================================================================
+// 4. 形态学 1：膨胀 
+// 【架构师原理解密】车牌底色是蓝的(变白)，字是白的(变黑)。
+// 所以现在的车牌是一个白底黑字的“窟窿图”。用膨胀(OR)可以直接把黑字窟窿全填满！
+// =========================================================================
+wire        morph1_vs;
+wire        morph1_de;
+wire [7:0]  morph1_dilate;
+
+morphology u_morphology_dilate (
+    .clk         ( clk ),
+    .rst_n       ( rst_n ),
+    .matrix_vs   ( cb_bin_vs ),   
+    .matrix_de   ( matrix1_de ),
+    .p11(m1_11), .p12(m1_12), .p13(m1_13),
+    .p21(m1_21), .p22(m1_22), .p23(m1_23),
+    .p31(m1_31), .p32(m1_32), .p33(m1_33),
+    
+    .out_vs      ( morph1_vs ),
+    .out_de      ( morph1_de ),
+    .dilate_data ( morph1_dilate ), 
+    .erode_data  (  ) // 悬空不接
+);
+
+// =========================================================================
+// 5. 矩阵 2：为腐蚀生成 3x3 窗口
 // =========================================================================
 wire        matrix2_de;
 wire [7:0]  m2_11, m2_12, m2_13;
@@ -101,9 +137,9 @@ matrix_3x3 #(
 ) u_matrix_3x3_inst2 (
     .video_clk  ( clk ),
     .rst_n      ( rst_n ),
-    .video_vs   ( sobel_vs ),    
-    .video_de   ( sobel_de ),    
-    .video_data ( sobel_data ),  // 输入: Sobel 边缘
+    .video_vs   ( morph1_vs ),    
+    .video_de   ( morph1_de ),    
+    .video_data ( morph1_dilate), // 吞入变胖的、填满字体的图像
     
     .matrix_de  ( matrix2_de ),
     .matrix11(m2_11), .matrix12(m2_12), .matrix13(m2_13),
@@ -112,53 +148,8 @@ matrix_3x3 #(
 );
 
 // =========================================================================
-// 5. 第一级形态学：膨胀操作 (Dilation)
-// =========================================================================
-wire        morph1_vs;
-wire        morph1_de;
-wire [7:0]  morph1_dilate; // 我们只需要它的膨胀结果
-
-morphology u_morphology_dilate (
-    .clk         ( clk ),
-    .rst_n       ( rst_n ),
-    .matrix_vs   ( sobel_vs ),   
-    .matrix_de   ( matrix2_de ),
-    .p11(m2_11), .p12(m2_12), .p13(m2_13),
-    .p21(m2_21), .p22(m2_22), .p23(m2_23),
-    .p31(m2_31), .p32(m2_32), .p33(m2_33),
-    
-    .out_vs      ( morph1_vs ),
-    .out_de      ( morph1_de ),
-    .dilate_data ( morph1_dilate ), // 提取变胖的图像
-    .erode_data  ( /* 悬空不接 */ ) 
-);
-
-// =========================================================================
-// 6. 第三个 3x3 矩阵 (吞入“膨胀”后的图像，生成新窗口)
-// =========================================================================
-wire        matrix3_de;
-wire [7:0]  m3_11, m3_12, m3_13;
-wire [7:0]  m3_21, m3_22, m3_23;
-wire [7:0]  m3_31, m3_32, m3_33;
-
-matrix_3x3 #(
-    .IMG_WIDTH  ( IMG_WIDTH  ), 
-    .IMG_HEIGHT ( IMG_HEIGHT )
-) u_matrix_3x3_inst3 (
-    .video_clk  ( clk ),
-    .rst_n      ( rst_n ),
-    .video_vs   ( morph1_vs ),    // 传入第一级形态学的时序
-    .video_de   ( morph1_de ),    
-    .video_data ( morph1_dilate), // 【关键】输入变成膨胀后的图像！
-    
-    .matrix_de  ( matrix3_de ),
-    .matrix11(m3_11), .matrix12(m3_12), .matrix13(m3_13),
-    .matrix21(m3_21), .matrix22(m3_22), .matrix23(m3_23),
-    .matrix31(m3_31), .matrix32(m3_32), .matrix33(m3_33)
-);
-
-// =========================================================================
-// 7. 第二级形态学：腐蚀操作 (Erosion)
+// 6. 形态学 2：腐蚀 
+// 【目的】消除背景里可能出现的蓝色小斑点干扰，并且把车牌边框削回原尺寸。
 // =========================================================================
 wire [7:0]  morph2_erode;
 
@@ -166,21 +157,17 @@ morphology u_morphology_erode (
     .clk         ( clk ),
     .rst_n       ( rst_n ),
     .matrix_vs   ( morph1_vs ),   
-    .matrix_de   ( matrix3_de ),
-    .p11(m3_11), .p12(m3_12), .p13(m3_13),
-    .p21(m3_21), .p22(m3_22), .p23(m3_23),
-    .p31(m3_31), .p32(m3_32), .p33(m3_33),
+    .matrix_de   ( matrix2_de ),
+    .p11(m2_11), .p12(m2_12), .p13(m2_13),
+    .p21(m2_21), .p22(m2_22), .p23(m2_23),
+    .p31(m2_31), .p32(m2_32), .p33(m2_33),
     
-    // 最终输出给 Testbench
     .out_vs      ( post_vs ),
     .out_de      ( post_de ),
-    .dilate_data ( /* 悬空不接 */ ), 
-    .erode_data  ( morph2_erode )  // 提取变瘦的图像
+    .dilate_data ( ), 
+    .erode_data  ( morph2_erode ) 
 );
 
-// =========================================================================
-// 【终极输出选择】: 闭运算 = 先膨胀，再腐蚀
-// =========================================================================
+// 终极输出闭运算结果
 assign post_data = morph2_erode;
-
 endmodule
