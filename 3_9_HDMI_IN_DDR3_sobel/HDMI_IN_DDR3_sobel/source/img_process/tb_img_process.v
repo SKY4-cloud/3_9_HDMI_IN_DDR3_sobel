@@ -169,7 +169,7 @@ always @(negedge out_vsync) begin // 场同步下降沿代表一帧结束
         if (frame_cnt == 1) begin // 跑完完整的一帧就停
             $display("[+] 仿真结束：一帧图像已处理完毕！");
             $fclose(file_out);    // 必须关闭文件，否则数据写不进去！
-            $stop;                // 暂停仿真
+            #10000;$stop;                // 暂停仿真
         end
     end
 end
