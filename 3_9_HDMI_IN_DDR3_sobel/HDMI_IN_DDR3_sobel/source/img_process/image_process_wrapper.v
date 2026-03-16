@@ -199,9 +199,9 @@ projection_extractor #(
 always @(posedge clk) begin
     if (box_valid) begin
         $display("\n========================================");
-        $display(" [硬件投影加速器] 车牌坐标锁定成功！");
-        $display(" X 轴边界: %0d -> %0d", box_x_min, box_x_max);
-        $display(" Y 轴边界: %0d -> %0d", box_y_min, box_y_max);
+        $display(" [Hardware Projection Accelerator] Car plate coordinates locked successfully!");
+        $display(" X axis boundary: %0d -> %0d", box_x_min, box_x_max);
+        $display(" Y axis boundary: %0d -> %0d", box_y_min, box_y_max);
         $display("========================================\n");
     end
 end
