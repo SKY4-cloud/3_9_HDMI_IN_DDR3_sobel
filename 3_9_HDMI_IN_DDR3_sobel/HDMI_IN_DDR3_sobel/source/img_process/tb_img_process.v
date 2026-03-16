@@ -40,6 +40,11 @@ wire        out_hsync;
 wire        out_de;
 wire [7:0]  out_data;       // 假设 Sobel 出来是 8bit 灰度/二值化数据
 
+// 【新增声明】：把漏掉的 OSD 全彩视频流排线补上！
+wire        out_osd_vs;
+wire        out_osd_de;
+wire [23:0] out_osd_rgb;    // <--- 重点：明确告诉编译器它是 24 根线！
+
 // 内部控制变量
 reg [11:0]  h_cnt;          // 行计数器
 reg [11:0]  v_cnt;          // 场计数器
