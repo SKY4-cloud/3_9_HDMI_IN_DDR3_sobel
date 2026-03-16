@@ -191,7 +191,10 @@ always @(negedge out_vsync) begin // 场同步下降沿代表一帧结束
         if (frame_cnt == 1) begin // 跑完完整的一帧就停
             $display("[+] 仿真结束：一帧图像已处理完毕！");
             $fclose(file_out);    // 必须关闭文件，否则数据写不进去！
-            #1500000;$stop;                // 暂停仿真
+            #1500000;
+            $fclose(file_out); // 这是关之前那个文件的
+            $fclose(rgb_file); // 把我们新开的全彩文件也安全关闭！
+            $stop;                // 暂停仿真
         end
     end
 end

@@ -173,7 +173,9 @@ morphology u_morphology_erode (
 );
 
 // 终极输出闭运算结果
+// 终极输出闭运算结果
 assign post_data = morph2_erode;
+
 // =========================================================================
 // 【最终大招】7. 硬件直方图投影 (边界提取器)
 // =========================================================================
@@ -187,9 +189,9 @@ projection_extractor #(
 ) u_projection (
     .clk        ( clk ),
     .rst_n      ( rst_n ),
-    .vs_in      ( post_vs ),  // 形态学输出的时序
+    .vs_in      ( post_vs ),  
     .de_in      ( post_de ),
-    .bin_data   ( post_data ),// 形态学输出的大白块图
+    .bin_data   ( post_data ),
 
     .out_x_min  ( box_x_min ),
     .out_x_max  ( box_x_max ),
@@ -228,7 +230,7 @@ osd_draw_box #(
     .g_in        ( g_in ),
     .b_in        ( b_in ),
     
-    // 吞入上一帧算好的坐标 (来自 u_projection)
+    // 吞入上一帧算好的坐标 (完美承接第 7 步的线头)
     .box_x_min   ( box_x_min ),
     .box_x_max   ( box_x_max ),
     .box_y_min   ( box_y_min ),
@@ -244,4 +246,5 @@ osd_draw_box #(
 
 // 将分开的 RGB 拼接成 24bit 总线输出
 assign osd_rgb = {osd_r, osd_g, osd_b};
+
 endmodule
