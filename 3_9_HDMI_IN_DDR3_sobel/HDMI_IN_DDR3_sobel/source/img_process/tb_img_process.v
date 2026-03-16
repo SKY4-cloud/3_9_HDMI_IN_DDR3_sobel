@@ -170,7 +170,7 @@ end
 
 integer rgb_file;
 initial begin
-    rgb_file = $fopen("image_out_rgb.txt", "w");
+    rgb_file = $fopen("D:/fpga_pj/image_out_rgb.txt", "w");
 end
 
 reg [3:0] osd_frame_cnt = 0;
