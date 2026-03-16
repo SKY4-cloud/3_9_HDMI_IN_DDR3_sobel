@@ -168,14 +168,14 @@ initial begin
     rgb_file = $fopen("image_out_rgb.txt", "w");
 end
 
-reg [3:0] frame_cnt = 0;
+reg [3:0] osd_frame_cnt = 0;
 always @(posedge out_osd_vs) begin
-    frame_cnt <= frame_cnt + 1; // 每遇到一次场同步，帧数+1
+    osd_frame_cnt <= osd_frame_cnt + 1; // 每遇到一次场同步，帧数+1
 end
 
 always @(posedge clk) begin
     // 【核心秘籍】：第一帧算坐标，第二帧才画框！所以我们只抓第二帧！
-    if (out_osd_de && frame_cnt == 2) begin
+    if (out_osd_de && osd_frame_cnt == 2) begin
         // 把 24bit 全彩数据按 6 位十六进制写入
         $fwrite(rgb_file, "%02x%02x%02x\n", out_osd_rgb[23:16], out_osd_rgb[15:8], out_osd_rgb[7:0]);
     end
