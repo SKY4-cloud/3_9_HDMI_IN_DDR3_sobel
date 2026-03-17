@@ -70,7 +70,7 @@ module osd_draw_box #(
         if (!rst_n) begin
             latch_x_min <= 0; latch_x_max <= 0;
             latch_y_min <= 0; latch_y_max <= 0;
-        end else if (vs_rise) begin
+        end else if (de_in && x_cnt == 0 && y_cnt == 0) begin
             // 在每一帧画面的最开头，把探测器给的坐标抓过来锁死
             latch_x_min <= box_x_min;
             latch_x_max <= box_x_max;
