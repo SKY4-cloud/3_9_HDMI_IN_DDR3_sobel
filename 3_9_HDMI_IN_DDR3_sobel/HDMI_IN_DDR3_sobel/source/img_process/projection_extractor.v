@@ -164,21 +164,25 @@ module projection_extractor #(
                         scan_addr_r <= scan_cnt;
                         scan_cnt    <= scan_cnt + 1;
                     end else begin
-                        // 最后一个地址的数据到位，输出坐标并跳转
+                        // 最后一个地址的数据到位，仅做比较，不在此拍输出坐标
                         if (ram_rdata >= THRESHOLD) begin
                             if (tmp_x_min == 12'hFFF) tmp_x_min <= scan_addr_r;
                             tmp_x_max <= scan_addr_r;
                         end
                         state     <= 3;
-                        scan_cnt  <= 0;
                         scan_pipe <= 0;
-                        out_x_min <= tmp_x_min; out_x_max <= tmp_x_max;
-                        out_y_min <= tmp_y_min; out_y_max <= tmp_y_max;
-                        box_valid <= 1'b1;
                     end
                 end
 
-                3: begin // 【阶段 3】：x_ram 清零（y_ram 由 row_w_cnt 块每帧覆盖写入，无需清零）
+                3: begin // 【阶段 3】：锁存输出坐标（等待上一拍的 tmp 非阻塞赋值生效）
+                    out_x_min <= tmp_x_min; out_x_max <= tmp_x_max;
+                    out_y_min <= tmp_y_min; out_y_max <= tmp_y_max;
+                    box_valid <= 1'b1;
+                    state     <= 4;
+                    scan_cnt  <= 0;
+                end
+
+                4: begin // 【阶段 4】：x_ram 清零（y_ram 由 row_w_cnt 块每帧覆盖写入，无需清零）
                     box_valid <= 0;
                     if (scan_cnt < IMG_WIDTH) begin
                         x_ram[scan_cnt] <= 0;

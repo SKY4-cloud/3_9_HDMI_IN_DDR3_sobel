@@ -39,13 +39,24 @@ wire			rd_fifo_en;	//读FIFO使能
 reg	[10:0]	x_cnt;
 reg	[10:0]	y_cnt;
 
+reg			vs_r;
+always@(posedge video_clk or negedge rst_n)	begin
+	if(!rst_n)
+		vs_r	<=	1'b0;
+	else
+		vs_r	<=	video_vs;
+end
+wire vs_rise = ~vs_r & video_vs;
+
 //列计数
 always@(posedge video_clk or negedge rst_n)	begin
 	if(!rst_n)
 		x_cnt	<=	11'd0;
-	else	if(x_cnt == IMG_WIDTH - 1)//计数一行
+	else	if(vs_rise)
 		x_cnt	<=	11'd0;
-	else	if(video_de)	//数据有效
+	else	if(x_cnt == IMG_WIDTH - 1)
+		x_cnt	<=	11'd0;
+	else	if(video_de)
 		x_cnt	<=	x_cnt + 1'b1;
 	else
 		x_cnt	<=	x_cnt;
@@ -55,9 +66,11 @@ end
 always@(posedge video_clk or negedge rst_n)	begin
 	if(!rst_n)
 		y_cnt	<=	11'd0;
-	else	if(y_cnt == IMG_HEIGHT - 1 && x_cnt == IMG_WIDTH - 1)//计数一帧
+	else	if(vs_rise)
 		y_cnt	<=	11'd0;
-	else	if(x_cnt == IMG_WIDTH - 1)	//数据有效
+	else	if(y_cnt == IMG_HEIGHT - 1 && x_cnt == IMG_WIDTH - 1)
+		y_cnt	<=	11'd0;
+	else	if(x_cnt == IMG_WIDTH - 1)
 		y_cnt	<=	y_cnt + 1'b1;
 	else
 		y_cnt	<=	y_cnt;
