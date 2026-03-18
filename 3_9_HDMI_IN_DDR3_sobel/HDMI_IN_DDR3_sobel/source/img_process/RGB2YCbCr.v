@@ -5,17 +5,17 @@ module RGB2YCbCr
     input               rst_n           ,  
 
 
-    input               vsync_in ,   // vsyncÐÅºÅ
-    input               hsync_in ,   // hsyncÐÅºÅ
+    input               vsync_in ,   // vsyncï¿½Åºï¿½
+    input               hsync_in ,   // hsyncï¿½Åºï¿½
     input               de_in    ,   // 
     input       [4:0]   red         ,   
     input       [5:0]   green       ,   
     input       [4:0]   blue        ,   
 
 
-    output              vsync_out,   // vsyncÐÅºÅ
-    output              hsync_out,   // hsyncÐÅºÅ
-    output              de_out   ,   // data enableÐÅºÅ
+    output              vsync_out,   // vsyncï¿½Åºï¿½
+    output              hsync_out,   // hsyncï¿½Åºï¿½
+    output              de_out   ,   // data enableï¿½Åºï¿½
     output      [7:0]   y           ,  
     output      [7:0]   cb          ,  
     output      [7:0]   cr             

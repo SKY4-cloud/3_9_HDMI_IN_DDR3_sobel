@@ -5,11 +5,17 @@ module tb_img_process();
 // =========================================================================
 // 1. 参数定义 (必须与 Python 脚本生成的尺寸绝对一致！)
 // =========================================================================
-parameter IMG_WIDTH  = 200;    // 图像宽度
-parameter IMG_HEIGHT = 100;    // 图像高度
-parameter PIXEL_NUM  = IMG_WIDTH * IMG_HEIGHT; // 总像素数
+parameter IMG_WIDTH  = 200;
+parameter IMG_HEIGHT = 100;
+parameter PIXEL_NUM  = IMG_WIDTH * IMG_HEIGHT;
 
-// 模拟视频时序参数 (为了加快仿真速度，这里的消隐区设置得很小)
+// 仿真帧数控制：至少 3 帧才能完整验证 "投影计算→OSD 画框" 流程
+//   帧 1：projection_extractor 累加投影、计算坐标
+//   帧 2：osd_draw_box 用帧 1 的坐标画框 ← 捕获此帧
+//   帧 3：进入后仿真停止
+parameter SIM_FRAMES = 3;
+
+// 模拟视频时序参数 (缩小消隐区以加快仿真)
 parameter H_SYNC  = 10;
 parameter H_BACK  = 10;
 parameter H_DISP  = IMG_WIDTH;
@@ -19,75 +25,70 @@ parameter H_TOTAL = H_SYNC + H_BACK + H_DISP + H_FRONT;
 parameter V_SYNC  = 2;
 parameter V_BACK  = 30;
 parameter V_DISP  = IMG_HEIGHT;
-// 【修改点】：把原本的 2 改成 30！给硬件留出 30 行的休息时间！
-parameter V_FRONT = 2; // 30行 * 230拍 = 6900个周期，绝对够算 4096 拍了！
+parameter V_FRONT = 2;
 parameter V_TOTAL = V_SYNC + V_BACK + V_DISP + V_FRONT;
 
 // =========================================================================
 // 2. 信号定义
 // =========================================================================
-reg         clk;            // 模拟系统时序 (如 50MHz)
-reg         rst_n;          // 低电平复位
+reg         clk;
+reg         rst_n;
 
-// 虚拟摄像头输出给 DUT(待测模块) 的信号
 reg         cam_vsync;
 reg         cam_hsync;
-reg         cam_de;         // 数据有效使能 (Data Enable)
-reg  [23:0] cam_data;       // 24bit RGB 像素数据
+reg         cam_de;
+reg  [23:0] cam_data;
 
-// DUT 输出的信号 (准备抓取用来验证)
 wire        out_vsync;
-wire        out_hsync;
 wire        out_de;
-wire [7:0]  out_data;       // 假设 Sobel 出来是 8bit 灰度/二值化数据
+wire [7:0]  out_data;
 
-// 【新增声明】：把漏掉的 OSD 全彩视频流排线补上！
 wire        out_osd_vs;
 wire        out_osd_de;
-wire [23:0] out_osd_rgb;    // <--- 重点：明确告诉编译器它是 24 根线！
+wire [23:0] out_osd_rgb;
 
-// 内部控制变量
-reg [11:0]  h_cnt;          // 行计数器
-reg [11:0]  v_cnt;          // 场计数器
-reg [31:0]  pixel_cnt;      // 已读取的像素计数
+reg [11:0]  h_cnt;
+reg [11:0]  v_cnt;
+reg [31:0]  pixel_cnt;
 
-// 内存数组，用来一口吞下整个 TXT 文件
-reg [23:0]  img_mem [0:PIXEL_NUM-1]; 
+reg [23:0]  img_mem [0:PIXEL_NUM-1];
 
-integer     file_out;       // 输出文件句柄
+integer     file_out;
 
 // =========================================================================
-// 3. 时钟与复位生成 (系统的“心脏”)
+// 3. 时钟与复位
 // =========================================================================
 initial begin
     clk = 0;
-    forever #10 clk = ~clk; // 产生 50MHz 时钟 (周期20ns)
+    forever #10 clk = ~clk;
 end
 
 initial begin
     rst_n = 0;
     #100;
-    rst_n = 1;              // 100ns 后释放复位
+    rst_n = 1;
 end
 
 // =========================================================================
-// 4. 读取 Python 生成的激励数据 (注入“灵魂”)
+// 4. 读取激励数据
 // =========================================================================
 initial begin
-    // 【老兵排雷】: 确保 "image_in.txt" 放在 Modelsim 仿真目录 (通常是工作区的根目录)
     $readmemh("D:/fpga_pj/image3.txt", img_mem);
-    
-    // 打开一个文件用来保存输出结果
+
     file_out = $fopen("D:/fpga_pj/image_out.txt", "w");
     if (!file_out) begin
-        $display("[!] 错误: 无法创建输出文件 image_out.txt");
+        $display("[!] ERROR: Cannot create image_out.txt");
         $stop;
     end
 end
 
 // =========================================================================
-// 5. 虚拟视频时序发生器 (模拟真实 HDMI/摄像头 的 HSYNC, VSYNC, DE)
+// 5. 虚拟视频时序发生器
 // =========================================================================
+// 组合逻辑 DE，用于像素数据同步加载（消除 cam_de 与 cam_data 的 1 拍错位）
+wire de_comb = ((h_cnt >= H_SYNC + H_BACK) && (h_cnt < H_SYNC + H_BACK + H_DISP) &&
+                (v_cnt >= V_SYNC + V_BACK) && (v_cnt < V_SYNC + V_BACK + V_DISP));
+
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         h_cnt     <= 0;
@@ -98,10 +99,8 @@ always @(posedge clk or negedge rst_n) begin
         cam_data  <= 24'd0;
         pixel_cnt <= 0;
     end else begin
-        // 行计数器
         if (h_cnt == H_TOTAL - 1) begin
             h_cnt <= 0;
-            // 场计数器
             if (v_cnt == V_TOTAL - 1)
                 v_cnt <= 0;
             else
@@ -110,97 +109,106 @@ always @(posedge clk or negedge rst_n) begin
             h_cnt <= h_cnt + 1;
         end
 
-        // 产生同步信号 (高有效或低有效取决于你的具体模块，这里用高有效举例)
         cam_hsync <= (h_cnt < H_SYNC) ? 1'b1 : 1'b0;
         cam_vsync <= (v_cnt < V_SYNC) ? 1'b1 : 1'b0;
 
-        // 产生数据有效信号 DE (Data Enable)
-        cam_de <= ((h_cnt >= H_SYNC + H_BACK) && (h_cnt < H_SYNC + H_BACK + H_DISP) &&
-                   (v_cnt >= V_SYNC + V_BACK) && (v_cnt < V_SYNC + V_BACK + V_DISP)) ? 1'b1 : 1'b0;
+        // cam_de 和 cam_data 都基于 de_comb 驱动，保证同拍对齐送入 DUT
+        cam_de <= de_comb;
 
-        // 当 DE 有效时，从内存中吐出一个像素
-        if (cam_de) begin
+        if (de_comb) begin
             cam_data  <= img_mem[pixel_cnt];
             if (pixel_cnt == PIXEL_NUM - 1)
-                pixel_cnt <= 0; // 一帧结束，循环读取
+                pixel_cnt <= 0;
             else
                 pixel_cnt <= pixel_cnt + 1;
         end else begin
-            cam_data <= 24'd0;  // 消隐区数据置零
+            cam_data <= 24'd0;
         end
     end
 end
 
 // =========================================================================
-// 6. 实例化待测模块 (DUT) - 接入剥离出的纯净流水线
+// 6. 实例化 DUT
 // =========================================================================
 image_process_wrapper #(
-    .IMG_WIDTH  ( IMG_WIDTH  ), // 200
-    .IMG_HEIGHT ( IMG_HEIGHT )  // 100
+    .IMG_WIDTH  ( IMG_WIDTH  ),
+    .IMG_HEIGHT ( IMG_HEIGHT )
 ) u_image_process_wrapper (
     .clk        ( clk ),
     .rst_n      ( rst_n ),
-    
-    // 输入：Testbench 虚拟摄像头的数据
+
     .vs_in      ( cam_vsync ),
     .de_in      ( cam_de ),
-    .r_in       ( cam_data[23:16] ), // 提取 24bit 里的 Red 通道
-    .g_in       ( cam_data[15:8]  ), // 提取 Green 通道
-    .b_in       ( cam_data[7:0]   ), // 提取 Blue 通道
-    
-    // 输出：抓取 Sobel 的结果写入 TXT
+    .r_in       ( cam_data[23:16] ),
+    .g_in       ( cam_data[15:8]  ),
+    .b_in       ( cam_data[7:0]   ),
+
     .post_vs   ( out_vsync ),
     .post_de   ( out_de ),
     .post_data ( out_data ),
-    // 【新增】接出 OSD 全彩视频流
+
     .osd_vs    ( out_osd_vs ),
     .osd_de    ( out_osd_de ),
     .osd_rgb   ( out_osd_rgb )
 );
 
 // =========================================================================
-// 7. 捕获输出并写入文件 (准备交回给 Python)
+// 7. 二值化输出捕获（仅写入最后一个完整处理帧）
 // =========================================================================
-// 当 DUT 输出 DE 为高时，将处理结果写回 TXT 文件
+reg [11:0] frame_cnt = 0;
+always @(negedge out_vsync) begin
+    if (!rst_n)
+        frame_cnt <= 0;
+    else
+        frame_cnt <= frame_cnt + 1;
+end
+
 always @(posedge clk) begin
-    if (out_de) begin
-        // 将 8bit 数据以十六进制格式写入文件，并换行
+    if (out_de && frame_cnt == SIM_FRAMES - 1) begin
         $fwrite(file_out, "%02x\n", out_data);
     end
 end
 
+// =========================================================================
+// 8. OSD 全彩输出捕获（捕获带有效画框的帧）
+// =========================================================================
 integer rgb_file;
 initial begin
     rgb_file = $fopen("D:/fpga_pj/image_out_rgb.txt", "w");
+    if (!rgb_file) begin
+        $display("[!] ERROR: Cannot create image_out_rgb.txt");
+        $stop;
+    end
 end
 
 reg [3:0] osd_frame_cnt = 0;
 always @(posedge out_osd_vs) begin
-    osd_frame_cnt <= osd_frame_cnt + 1; // 每遇到一次场同步，帧数+1
+    osd_frame_cnt <= osd_frame_cnt + 1;
 end
 
 always @(posedge clk) begin
-    // 【核心秘籍】：第一帧算坐标，第二帧才画框！所以我们只抓第二帧！
-    if (out_osd_de && osd_frame_cnt == 2) begin
-        // 把 24bit 全彩数据按 6 位十六进制写入
-        $fwrite(rgb_file, "%02x%02x%02x\n", out_osd_rgb[23:16], out_osd_rgb[15:8], out_osd_rgb[7:0]);
+    if (out_osd_de && osd_frame_cnt == SIM_FRAMES - 1) begin
+        $fwrite(rgb_file, "%02x%02x%02x\n",
+                out_osd_rgb[23:16], out_osd_rgb[15:8], out_osd_rgb[7:0]);
     end
 end
 
-// 控制仿真结束条件：当第一帧数据完全写入后，停止仿真
-reg  [11:0] frame_cnt=0;
-always @(negedge out_vsync) begin // 场同步下降沿代表一帧结束
-    if (!rst_n) 
-        frame_cnt <= 0;
-    else begin
-        frame_cnt <= frame_cnt + 1;
-        if (frame_cnt == 1) begin // 跑完完整的一帧就停
-            $display("[+] 仿真结束：一帧图像已处理完毕！");
-            $fclose(file_out);    // 必须关闭文件，否则数据写不进去！
-            #100;
-            $fclose(rgb_file); // 把我们新开的全彩文件也安全关闭！
-            $stop;                // 暂停仿真
-        end
+// =========================================================================
+// 9. 帧进度显示与仿真结束控制
+// =========================================================================
+always @(posedge frame_cnt[0] or posedge frame_cnt[1] or
+         posedge frame_cnt[2] or posedge frame_cnt[3]) begin
+    $display("[*] Frame %0d / %0d completed (sim time = %0t)",
+             frame_cnt, SIM_FRAMES, $time);
+end
+
+always @(negedge out_vsync) begin
+    if (frame_cnt == SIM_FRAMES - 1) begin
+        $display("[+] Simulation finished: %0d frames processed.", SIM_FRAMES);
+        $fclose(file_out);
+        $fclose(rgb_file);
+        #100;
+        $stop;
     end
 end
 
