@@ -92,8 +92,7 @@ module projection_extractor #(
     reg [11:0] scan_addr_r; // 锁存上一拍发出的地址（与读出数据对应）
     reg [11:0] ram_rdata;   // 锁存 BRAM 读出数据
 
-    // IMG_WIDTH 与 IMG_HEIGHT 的最大值，用于清零阶段循环上界
-    localparam CLR_DEPTH = (IMG_WIDTH > IMG_HEIGHT) ? IMG_WIDTH : IMG_HEIGHT;
+    
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -179,14 +178,13 @@ module projection_extractor #(
                     end
                 end
 
-                3: begin // 【阶段 3】：内存清零，x_ram 和 y_ram 同步清零，为下一帧做准备
+                3: begin // 【阶段 3】：x_ram 清零（y_ram 由 row_w_cnt 块每帧覆盖写入，无需清零）
                     box_valid <= 0;
-                    if (scan_cnt < CLR_DEPTH) begin
+                    if (scan_cnt < IMG_WIDTH) begin
                         x_ram[scan_cnt] <= 0;
-                        y_ram[scan_cnt] <= 0;
                         scan_cnt <= scan_cnt + 1;
                     end else begin
-                        state <= 0; // 回到待机状态，等下一帧
+                        state <= 0;
                     end
                 end
             endcase
