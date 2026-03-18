@@ -75,7 +75,7 @@ end
 // =========================================================================
 initial begin
     // 【老兵排雷】: 确保 "image_in.txt" 放在 Modelsim 仿真目录 (通常是工作区的根目录)
-    $readmemh("D:/fpga_pj/image1.txt", img_mem);
+    $readmemh("D:/fpga_pj/image2.txt", img_mem);
     
     // 打开一个文件用来保存输出结果
     file_out = $fopen("D:/fpga_pj/image_out.txt", "w");

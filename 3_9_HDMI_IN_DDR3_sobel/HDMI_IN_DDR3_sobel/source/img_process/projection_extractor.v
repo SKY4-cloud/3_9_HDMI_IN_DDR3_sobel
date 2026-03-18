@@ -87,9 +87,22 @@ module projection_extractor #(
     reg [11:0] tmp_x_min, tmp_x_max;
     reg [11:0] tmp_y_min, tmp_y_max;
 
+    // BRAM 读取流水线寄存器（1拍延迟补偿）
+    reg        scan_pipe;   // 0=首拍地址发出，1=数据已有效可比较
+    reg [11:0] scan_addr_r; // 锁存上一拍发出的地址（与读出数据对应）
+    reg [11:0] ram_rdata;   // 锁存 BRAM 读出数据
+
+    // IMG_WIDTH 与 IMG_HEIGHT 的最大值，用于清零阶段循环上界
+    localparam CLR_DEPTH = (IMG_WIDTH > IMG_HEIGHT) ? IMG_WIDTH : IMG_HEIGHT;
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state <= 0; scan_cnt <= 0; box_valid <= 0;
+            state       <= 0;
+            scan_cnt    <= 0;
+            scan_pipe   <= 0;
+            scan_addr_r <= 0;
+            ram_rdata   <= 0;
+            box_valid   <= 0;
         end else begin
             case (state)
                 0: begin // 【阶段 0】：画面传输时，实时累加 X_RAM
@@ -99,41 +112,78 @@ module projection_extractor #(
                     end
 
                     if (vs_rise) begin // 画面传完，利用垂直消隐区开始扫描
-                        state <= 1; scan_cnt <= 0;
+                        state     <= 1;
+                        scan_cnt  <= 0;
+                        scan_pipe <= 0;
                         tmp_y_min <= 12'hFFF; tmp_y_max <= 0;
                         tmp_x_min <= 12'hFFF; tmp_x_max <= 0;
                     end
                 end
-                1: begin // 【阶段 1】：扫描 Y_RAM 找上下边界
-                    if (scan_cnt < IMG_HEIGHT) begin
-                        if (y_ram[scan_cnt] >= THRESHOLD) begin // 滤除噪点！
-                            if (tmp_y_min == 12'hFFF) tmp_y_min <= scan_cnt;
-                            tmp_y_max <= scan_cnt;
+
+                1: begin // 【阶段 1】：扫描 Y_RAM 找上下边界（含 BRAM 1拍读延迟补偿）
+                    if (!scan_pipe) begin
+                        // 第 1 拍：发出首地址，等待 BRAM 读出
+                        ram_rdata   <= y_ram[scan_cnt];
+                        scan_addr_r <= scan_cnt;
+                        scan_cnt    <= scan_cnt + 1;
+                        scan_pipe   <= 1;
+                    end else if (scan_cnt < IMG_HEIGHT) begin
+                        // 后续拍：ram_rdata 是上一拍地址的有效数据，边比较边发下一地址
+                        if (ram_rdata >= THRESHOLD) begin
+                            if (tmp_y_min == 12'hFFF) tmp_y_min <= scan_addr_r;
+                            tmp_y_max <= scan_addr_r;
                         end
-                        scan_cnt <= scan_cnt + 1;
+                        ram_rdata   <= y_ram[scan_cnt];
+                        scan_addr_r <= scan_cnt;
+                        scan_cnt    <= scan_cnt + 1;
                     end else begin
-                        state <= 2; scan_cnt <= 0;
+                        // 最后一个地址的数据到位，处理并跳转
+                        if (ram_rdata >= THRESHOLD) begin
+                            if (tmp_y_min == 12'hFFF) tmp_y_min <= scan_addr_r;
+                            tmp_y_max <= scan_addr_r;
+                        end
+                        state     <= 2;
+                        scan_cnt  <= 0;
+                        scan_pipe <= 0;
                     end
                 end
-                2: begin // 【阶段 2】：扫描 X_RAM 找左右边界
-                    if (scan_cnt < IMG_WIDTH) begin
-                        if (x_ram[scan_cnt] >= THRESHOLD) begin // 滤除噪点！
-                            if (tmp_x_min == 12'hFFF) tmp_x_min <= scan_cnt;
-                            tmp_x_max <= scan_cnt;
+
+                2: begin // 【阶段 2】：扫描 X_RAM 找左右边界（含 BRAM 1拍读延迟补偿）
+                    if (!scan_pipe) begin
+                        // 第 1 拍：发出首地址，等待 BRAM 读出
+                        ram_rdata   <= x_ram[scan_cnt];
+                        scan_addr_r <= scan_cnt;
+                        scan_cnt    <= scan_cnt + 1;
+                        scan_pipe   <= 1;
+                    end else if (scan_cnt < IMG_WIDTH) begin
+                        // 后续拍：边比较边发下一地址
+                        if (ram_rdata >= THRESHOLD) begin
+                            if (tmp_x_min == 12'hFFF) tmp_x_min <= scan_addr_r;
+                            tmp_x_max <= scan_addr_r;
                         end
-                        scan_cnt <= scan_cnt + 1;
+                        ram_rdata   <= x_ram[scan_cnt];
+                        scan_addr_r <= scan_cnt;
+                        scan_cnt    <= scan_cnt + 1;
                     end else begin
-                        state <= 3; scan_cnt <= 0;
-                        // 扫描完成，输出最终锁定的防抖边界！
+                        // 最后一个地址的数据到位，输出坐标并跳转
+                        if (ram_rdata >= THRESHOLD) begin
+                            if (tmp_x_min == 12'hFFF) tmp_x_min <= scan_addr_r;
+                            tmp_x_max <= scan_addr_r;
+                        end
+                        state     <= 3;
+                        scan_cnt  <= 0;
+                        scan_pipe <= 0;
                         out_x_min <= tmp_x_min; out_x_max <= tmp_x_max;
                         out_y_min <= tmp_y_min; out_y_max <= tmp_y_max;
-                        box_valid <= 1'b1; // 发送完成脉冲给 CPU
+                        box_valid <= 1'b1;
                     end
                 end
-                3: begin // 【阶段 3】：内存清零，为下一帧做准备
-                    box_valid <= 0; 
-                    if (scan_cnt < IMG_WIDTH) begin
+
+                3: begin // 【阶段 3】：内存清零，x_ram 和 y_ram 同步清零，为下一帧做准备
+                    box_valid <= 0;
+                    if (scan_cnt < CLR_DEPTH) begin
                         x_ram[scan_cnt] <= 0;
+                        y_ram[scan_cnt] <= 0;
                         scan_cnt <= scan_cnt + 1;
                     end else begin
                         state <= 0; // 回到待机状态，等下一帧
