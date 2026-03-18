@@ -75,7 +75,7 @@ end
 // =========================================================================
 initial begin
     // 【老兵排雷】: 确保 "image_in.txt" 放在 Modelsim 仿真目录 (通常是工作区的根目录)
-    $readmemh("D:/fpga_pj/image2.txt", img_mem);
+    $readmemh("D:/fpga_pj/image3.txt", img_mem);
     
     // 打开一个文件用来保存输出结果
     file_out = $fopen("D:/fpga_pj/image_out.txt", "w");
@@ -188,7 +188,7 @@ always @(posedge clk) begin
 end
 
 // 控制仿真结束条件：当第一帧数据完全写入后，停止仿真
-reg  [11:0] frame_cnt;
+reg  [11:0] frame_cnt=0;
 always @(negedge out_vsync) begin // 场同步下降沿代表一帧结束
     if (!rst_n) 
         frame_cnt <= 0;
@@ -197,8 +197,7 @@ always @(negedge out_vsync) begin // 场同步下降沿代表一帧结束
         if (frame_cnt == 1) begin // 跑完完整的一帧就停
             $display("[+] 仿真结束：一帧图像已处理完毕！");
             $fclose(file_out);    // 必须关闭文件，否则数据写不进去！
-            #1500000;
-            $fclose(file_out); // 这是关之前那个文件的
+            #100;
             $fclose(rgb_file); // 把我们新开的全彩文件也安全关闭！
             $stop;                // 暂停仿真
         end
